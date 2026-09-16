@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Haven — private local AI</title>
+    <meta name="description" content="Private, unlimited AI that runs entirely in your browser. No account. No cloud.">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23171b18'/%3E%3Cpath d='M12 36c8-16 32-16 40 0' fill='none' stroke='%23e8b86d' stroke-width='4' stroke-linecap='round'/%3E%3Cpath d='M20 40c6-10 18-10 24 0' fill='none' stroke='%23e8ece6' stroke-width='3' stroke-linecap='round'/%3E%3Ccircle cx='32' cy='24' r='3' fill='%23e8b86d'/%3E%3C/svg%3E">
+    <script type="module">
+        import * as webllm from "https://esm.run/@mlc-ai/web-llm";
+        window.webllm = webllm;
+    </script>
+    <style>
+        :root {
+            --bg: #0e110f;
+            --panel: #161a17;
+            --panel-2: #1c211e;
+            --ink: #e8ece6;
+            --muted: #8b9488;
+            --line: #2a312c;
+            --accent: #e8b86d;
+            --accent-ink: #1a1408;
+            --user: #243028;
+            --bot: #1e2320;
+            --danger: #e07a6a;
+            --ok: #8fbf88;
+            --shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+            --radius: 14px;
+        }
+        * { box-sizing: border-box; }
+        html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font-family: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif; }
+        body { display: flex; overflow: hidden; }
+        button, select, textarea, input { font-family: "Segoe UI", system-ui, sans-serif; }
+        aside { width: 280px; background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; padding: 18px 14px; min-width: 0; }
+        .brand { display: flex; align-items: center; gap: 10px; padding: 4px 6px 16px; }
+        .mark { width: 34px; height: 34px; border-radius: 10px; background: linear-gradient(160deg, #2a312c, #121512); border: 1px solid var(--line); display: grid; place-items: center; color: var(--accent); font-size: 16px; }
+        .brand h1 { margin: 0; font-size: 1.25rem; letter-spacing: 0.02em; font-weight: 600; }
+        .brand p { margin: 2px 0 0; color: var(--muted); font-size: 0.72rem; font-family: "Segoe UI", system-ui, sans-serif; letter-spacing: 0.04em; text-transform: uppercase; }
+        .ghost, .primary, .icon-btn { border: 1px solid var(--line); background: var(--panel-2); color: var(--ink); border-radius: 10px; cursor: pointer; }
+        .primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; font-weight: 700; }
+        .primary:hover { filter: brightness(1.05); }
+        #new-chat-btn { width: 100%; padding: 10px 12px; margin-bottom: 12px; }
+        #session-list { list-style: none; padding: 0; margin: 0; overflow-y: auto; flex: 1; }
+        .session-item { display: flex; align-items: center; gap: 6px; padding: 8px 8px 8px 10px; border-radius: 10px; margin-bottom: 4px; cursor: pointer; }
+        .session-item:hover { background: var(--panel-2); }
+        .session-item.active { background: #2a2618; outline: 1px solid #4a3f24; }
+        .session-item span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: "Segoe UI", system-ui, sans-serif; font-size: 0.88rem; }
+        .session-item button { opacity: 0; background: transparent; border: 0; color: var(--muted); cursor: pointer; padding: 2px 6px; border-radius: 6px; }
+        .session-item:hover button, .session-item.active button { opacity: 1; }
+        .session-item button:hover { color: var(--danger); }
+        .aside-foot { border-top: 1px solid var(--line); padding-top: 12px; font-family: "Segoe UI", system-ui, sans-serif; font-size: 0.75rem; color: var(--muted); line-height: 1.45; }
+        main { flex: 1; min-width: 0; display: flex; flex-direction: column; height: 100vh; background: radial-gradient(1200px 400px at 80% -10%, rgba(232, 184, 109, 0.06), transparent 50%), var(--bg); }
+        header { padding: 14px 18px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; gap: 12px; background: rgba(14, 17, 15, 0.72); backdrop-filter: blur(10px); }
+        #current-chat-title { font-size: 1.05rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .header-actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+        select, .icon-btn { padding: 8px 10px; font-size: 0.82rem; background: var(--panel); color: var(--ink); }
+        #menu-btn { display: none; }
+        #chat-container { flex: 1; overflow-y: auto; padding: 28px 8vw 20px; display: flex; flex-direction: column; gap: 14px; }
+        .empty { margin: auto; text-align: center; max-width: 420px; color: var(--muted); font-family: "Segoe UI", system-ui, sans-serif; }
+        .empty h2 { font-family: Georgia, serif; color: var(--ink); font-weight: 500; margin-bottom: 8px; }
+        .message { width: fit-content; max-width: min(720px, 100%); padding: 12px 16px; border-radius: var(--radius); line-height: 1.55; word-break: break-word; font-family: "Segoe UI", system-ui, sans-serif; font-size: 0.97rem; border: 1px solid transparent; }
+        .message.user { background: var(--user); align-self: flex-end; border-bottom-right-radius: 4px; border-color: #314038; }
+        .message.assistant { background: var(--bot); align-self: flex-start; border-bottom-left-radius: 4px; border-color: var(--line); }
+        .message.assistant pre { background: #0c0f0d; padding: 10px 12px; border-radius: 8px; overflow-x: auto; font-size: 0.85rem; }
+        .message code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.88em; }
+        .input-area { padding: 14px 8vw 22px; }
+        .composer { display: flex; gap: 8px; align-items: flex-end; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 10px; box-shadow: var(--shadow); }
+        textarea { flex: 1; background: transparent; color: var(--ink); border: 0; padding: 8px 10px; resize: none; min-height: 24px; max-height: 160px; font-size: 1rem; }
+        textarea:focus { outline: none; }
+        #send-btn, #stop-btn { height: 40px; padding: 0 16px; border-radius: 10px; }
+        #stop-btn { display: none; background: var(--danger); color: #1a0c0a; border: 0; font-weight: 700; cursor: pointer; }
+        button:disabled { opacity: 0.45; cursor: not-allowed; }
+        #loader-overlay, #settings-overlay { position: fixed; inset: 0; background: rgba(8, 10, 9, 0.88); display: flex; justify-content: center; align-items: center; z-index: 20; padding: 20px; }
+        #settings-overlay { display: none; }
+        #loader-box, .sheet { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; width: min(420px, 100%); padding: 28px; box-shadow: var(--shadow); }
+        #loader-box h3, .sheet h3 { margin: 0 0 6px; font-weight: 600; }
+        #model-name-label, #status-text, .hint { color: var(--muted); font-family: "Segoe UI", system-ui, sans-serif; font-size: 0.9rem; }
+        .progress-bar-container { width: 100%; background: var(--panel-2); border-radius: 99px; overflow: hidden; margin-top: 18px; height: 8px; }
+        #progress-bar { width: 0%; height: 100%; background: var(--accent); transition: width 0.12s ease; }
+        .sheet label { display: block; margin: 14px 0 6px; font-family: "Segoe UI", system-ui, sans-serif; font-size: 0.8rem; color: var(--muted); }
+        .sheet textarea, .sheet input[type="range"] { width: 100%; }
+        .sheet textarea { background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; color: var(--ink); min-height: 90px; padding: 10px; }
+        .sheet-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+        @media (max-width: 800px) {
+            aside { position: fixed; inset: 0 auto 0 0; z-index: 15; transform: translateX(-100%); transition: transform 0.2s ease; }
+            aside.open { transform: none; }
+            #menu-btn { display: inline-flex; }
+            #chat-container, .input-area { padding-left: 16px; padding-right: 16px; }
+        }
+    </style>
+</head>
+<body>
+    <div id="loader-overlay">
+        <div id="loader-box">
+            <h3>Lighting Haven</h3>
+            <p id="model-name-label">Preparing a local model…</p>
+            <div class="progress-bar-container"><div id="progress-bar"></div></div>
+            <div id="status-text">Checking WebGPU…</div>
+        </div>
+    </div>
+    <div id="settings-overlay">
+        <div class="sheet">
+            <h3>Settings</h3>
+            <p class="hint">These stay in this browser. Nothing is sent to a server.</p>
+            <label for="system-prompt">System prompt</label>
+            <textarea id="system-prompt" placeholder="You are a concise, private assistant running on the user's device."></textarea>
+            <label for="temperature">Temperature <span id="temp-val">0.7</span></label>
+            <input id="temperature" type="range" min="0" max="1.5" step="0.1" value="0.7">
+            <div class="sheet-actions">
+                <button class="ghost" id="close-settings" type="button">Done</button>
+            </div>
+        </div>
+    </div>
+    <aside id="sidebar">
+        <div class="brand">
+            <div class="mark" aria-hidden="true">⌂</div>
+            <div>
+                <h1>Haven</h1>
+                <p>Private local AI</p>
+            </div>
+        </div>
+        <button id="new-chat-btn" class="primary" type="button">+ New chat</button>
+        <ul id="session-list"></ul>
+        <div class="aside-foot">Runs on this device. Chats never leave the browser.</div>
+    </aside>
+    <main>
+        <header>
+            <div style="display:flex;align-items:center;gap:8px;min-width:0;">
+                <button class="icon-btn" id="menu-btn" type="button" aria-label="Open conversations">☰</button>
+                <div id="current-chat-title">New chat</div>
+            </div>
+            <div class="header-actions">
+                <select id="model-select" title="Local model"></select>
+                <button class="icon-btn" id="export-btn" type="button" title="Export conversation">Export</button>
+                <button class="icon-btn" id="settings-btn" type="button" title="Settings">Settings</button>
+            </div>
+        </header>
+        <div id="chat-container"></div>
+        <div class="input-area">
+            <div class="composer">
+                <textarea id="user-input" placeholder="Ask anything. It stays here." rows="1"></textarea>
+                <button id="stop-btn" type="button">Stop</button>
+                <button id="send-btn" class="primary" type="button" disabled>Send</button>
+            </div>
+        </div>
+    </main>
+    <script>
+        const MODELS = [
+            { id: "Llama-3.2-1B-Instruct-q4f16_1-MLC", name: "Llama 3.2 1B", size: "~1.2 GB" },
+            { id: "Qwen2.5-1.5B-Instruct-q4f16_1-MLC", name: "Qwen2.5 1.5B", size: "~1.0 GB" },
+            { id: "Llama-3.2-3B-Instruct-q4f16_1-MLC", name: "Llama 3.2 3B", size: "~2.0 GB" },
+            { id: "Phi-3.5-mini-instruct-q4f16_1-MLC", name: "Phi 3.5 Mini", size: "~2.4 GB" }
+        ];
+        const DEFAULT_MODEL = MODELS[0].id;
+        const DEFAULT_SYSTEM_PROMPT = "You are Haven, a private assistant running entirely on the user's device. Be clear, useful, and concise. Never claim to have network access you do not have.";
+        let engine = null;
+        let currentSessionId = null;
+        let db = null;
+        let generating = false;
+        let selectedModel = localStorage.getItem("haven.model") || DEFAULT_MODEL;
+        function initDB() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open("HavenChatDB", 1);
+                request.onerror = () => reject(request.error);
+                request.onsuccess = () => { db = request.result; resolve(db); };
+                request.onupgradeneeded = (event) => {
+                    const database = event.target.result;
+                    if (!database.objectStoreNames.contains("sessions")) {
+                        const sessionStore = database.createObjectStore("sessions", { keyPath: "id" });
+                        sessionStore.createIndex("updatedAt", "updatedAt", { unique: false });
+                    }
+                    if (!database.objectStoreNames.contains("messages")) {
+                        const messageStore = database.createObjectStore("messages", { keyPath: "id", autoIncrement: true });
+                        messageStore.createIndex("sessionId", "sessionId", { unique: false });
+                    }
+                };
+            });
+        }
+        function dbSaveSession(id, title) {
+            return new Promise((resolve) => {
+                const tx = db.transaction("sessions", "readwrite");
+                tx.objectStore("sessions").put({ id, title, updatedAt: Date.now() });
+                tx.oncomplete = () => resolve();
+            });
+        }
+        function dbGetSessions() {
+            return new Promise((resolve) => {
+                const tx = db.transaction("sessions", "readonly");
+                const request = tx.objectStore("sessions").index("updatedAt").getAll();
+                request.onsuccess = () => resolve(request.result.reverse());
+            });
+        }
+        function dbSaveMessage(sessionId, role, content) {
+            return new Promise((resolve) => {
+                const tx = db.transaction("messages", "readwrite");
+                tx.objectStore("messages").add({ sessionId, role, content, timestamp: Date.now() });
+                tx.oncomplete = () => resolve();
+            });
+        }
+        function dbGetMessages(sessionId) {
+            return new Promise((resolve) => {
+                const tx = db.transaction("messages", "readonly");
+                const request = tx.objectStore("messages").index("sessionId").getAll(sessionId);
+                request.onsuccess = () => resolve(request.result);
+            });
+        }
+        function dbDeleteSession(id) {
+            return new Promise(async (resolve) => {
+                const messages = await dbGetMessages(id);
+                const tx = db.transaction(["sessions", "messages"], "readwrite");
+                tx.objectStore("sessions").delete(id);
+                const store = tx.objectStore("messages");
+                messages.forEach((m) => store.delete(m.id));
+                tx.oncomplete = () => resolve();
+            });
+        }
+        const progressBar = document.getElementById("progress-bar");
+        const statusText = document.getElementById("status-text");
+        const loaderOverlay = document.getElementById("loader-overlay");
+        const chatContainer = document.getElementById("chat-container");
+        const userInput = document.getElementById("user-input");
+        const sendBtn = document.getElementById("send-btn");
+        const stopBtn = document.getElementById("stop-btn");
+        const sessionListEl = document.getElementById("session-list");
+        const newChatBtn = document.getElementById("new-chat-btn");
+        const currentChatTitleEl = document.getElementById("current-chat-title");
+        const modelSelect = document.getElementById("model-select");
+        const modelNameLabel = document.getElementById("model-name-label");
+        const settingsOverlay = document.getElementById("settings-overlay");
+        const systemPromptEl = document.getElementById("system-prompt");
+        const temperatureEl = document.getElementById("temperature");
+        const tempVal = document.getElementById("temp-val");
+        systemPromptEl.value = localStorage.getItem("haven.system") || DEFAULT_SYSTEM_PROMPT;
+        temperatureEl.value = localStorage.getItem("haven.temp") || "0.7";
+        tempVal.textContent = temperatureEl.value;
+        MODELS.forEach((m) => {
+            const opt = document.createElement("option");
+            opt.value = m.id;
+            opt.textContent = m.name + " · " + m.size;
+            if (m.id === selectedModel) opt.selected = true;
+            modelSelect.appendChild(opt);
+        });
+        function modelMeta(id) { return MODELS.find((m) => m.id === id) || { name: id, size: "" }; }
+        function renderMarkdown(text) {
+            const escaped = String(text).replace(/&/g, "&").replace(/</g, "<").replace(/>/g, ">");
+            return escaped.replace(/```([\s\S]*?)```/g, "<pre><code>$1</code></pre>").replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>").replace(/\n/g, "<br>");
+        }
+        function showEmptyState() {
+            chatContainer.innerHTML = '<div class="empty"><h2>This room is yours.</h2><p>Haven runs the model on this computer. No account, no quota, no one else in the thread.</p></div>';
+        }
+        function setGenerating(on) {
+            generating = on;
+            sendBtn.style.display = on ? "none" : "inline-flex";
+            stopBtn.style.display = on ? "inline-flex" : "none";
+            sendBtn.disabled = on || !engine;
+            userInput.disabled = on;
+        }
+        async function initAI() {
+            try {
+                if (!navigator.gpu) {
+                    statusText.innerText = "This browser has no WebGPU. Use Chrome or Edge on a machine with a GPU.";
+                    return;
+                }
+                const meta = modelMeta(selectedModel);
+                modelNameLabel.innerText = "Loading " + meta.name + " (" + meta.size + ")";
+                engine = await webllm.CreateMLCEngine(selectedModel, {
+                    initProgressCallback: (progress) => {
+                        const match = progress.text && progress.text.match(/(\d+)%/);
+                        let percent = 0;
+                        if (match) percent = parseInt(match[1], 10);
+                        else if (progress.progress) percent = Math.round(progress.progress * 100);
+                        progressBar.style.width = percent + "%";
+                        statusText.innerText = progress.text || "Working…";
+                    }
+                });
+                loaderOverlay.style.display = "none";
+                sendBtn.disabled = false;
+                await initDB();
+                await loadSessionList();
+                const sessions = await dbGetSessions();
+                if (sessions.length > 0) await switchSession(sessions[0].id);
+                else await createNewSession();
+            } catch (err) {
+                statusText.innerText = "Could not load the model: " + (err.message || err);
+                console.error(err);
+            }
+        }
+        async function loadSessionList() {
+            const sessions = await dbGetSessions();
+            sessionListEl.innerHTML = "";
+            sessions.forEach((s) => {
+                const li = document.createElement("li");
+                li.className = "session-item" + (s.id === currentSessionId ? " active" : "");
+                const title = document.createElement("span");
+                title.textContent = s.title;
+                const del = document.createElement("button");
+                del.type = "button";
+                del.title = "Delete";
+                del.textContent = "\u2715";
+                del.onclick = async (e) => {
+                    e.stopPropagation();
+                    if (!confirm("Delete this conversation on this device?")) return;
+                    await dbDeleteSession(s.id);
+                    if (currentSessionId === s.id) {
+                        const rest = await dbGetSessions();
+                        if (rest.length) await switchSession(rest[0].id);
+                        else await createNewSession();
+                    } else {
+                        await loadSessionList();
+                    }
+                };
+                li.appendChild(title);
+                li.appendChild(del);
+                li.onclick = () => switchSession(s.id);
+                sessionListEl.appendChild(li);
+            });
+        }
+        async function createNewSession() {
+            currentSessionId = "session_" + Date.now();
+            await dbSaveSession(currentSessionId, "New chat");
+            currentChatTitleEl.innerText = "New chat";
+            showEmptyState();
+            await loadSessionList();
+            document.getElementById("sidebar").classList.remove("open");
+        }
+        async function switchSession(id) {
+            currentSessionId = id;
+            const sessions = await dbGetSessions();
+            const current = sessions.find((s) => s.id === id);
+            currentChatTitleEl.innerText = current ? current.title : "Chat";
+            chatContainer.innerHTML = "";
+            const messages = await dbGetMessages(id);
+            if (!messages.length) showEmptyState();
+            else messages.forEach((msg) => appendMessageUI(msg.role, msg.content));
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+            await loadSessionList();
+            document.getElementById("sidebar").classList.remove("open");
+        }
+        function appendMessageUI(role, content) {
+            const empty = chatContainer.querySelector(".empty");
+            if (empty) empty.remove();
+            const div = document.createElement("div");
+            div.className = "message " + role;
+            if (role === "assistant") div.innerHTML = renderMarkdown(content);
+            else div.innerText = content;
+            chatContainer.appendChild(div);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+            return div;
+        }
+        async function handleSendMessage() {
+            const text = userInput.value.trim();
+            if (!text || !engine || generating) return;
+            userInput.value = "";
+            userInput.style.height = "24px";
+            setGenerating(true);
+            const existing = await dbGetMessages(currentSessionId);
+            if (existing.length === 0) {
+                const title = text.length > 28 ? text.substring(0, 28) + "\u2026" : text;
+                await dbSaveSession(currentSessionId, title);
+                currentChatTitleEl.innerText = title;
+                await loadSessionList();
+            }
+            appendMessageUI("user", text);
+            await dbSaveMessage(currentSessionId, "user", text);
+            const botMsgDiv = appendMessageUI("assistant", "");
+            botMsgDiv.innerText = "\u2026";
+            try {
+                const allMessages = await dbGetMessages(currentSessionId);
+                const system = (systemPromptEl.value || DEFAULT_SYSTEM_PROMPT).trim();
+                const formattedHistory = [{ role: "system", content: system }, ...allMessages.map((m) => ({ role: m.role, content: m.content }))];
+                const completion = await engine.chat.completions.create({
+                    stream: true,
+                    temperature: parseFloat(temperatureEl.value),
+                    messages: formattedHistory
+                });
+                let fullResponse = "";
+                for await (const chunk of completion) {
+                    const delta = chunk.choices[0]?.delta?.content || "";
+                    fullResponse += delta;
+                    botMsgDiv.innerHTML = renderMarkdown(fullResponse);
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                }
+                await dbSaveMessage(currentSessionId, "assistant", fullResponse);
+            } catch (err) {
+                if (String(err.message || err).toLowerCase().includes("interrupt")) {
+                    const partial = botMsgDiv.innerText;
+                    if (partial && partial !== "\u2026") await dbSaveMessage(currentSessionId, "assistant", partial);
+                    else botMsgDiv.innerText = "(stopped)";
+                } else {
+                    botMsgDiv.innerText = "Could not generate a reply. Try a smaller model or reload.";
+                    console.error(err);
+                }
+            } finally {
+                setGenerating(false);
+                userInput.focus();
+            }
+        }
+        newChatBtn.onclick = createNewSession;
+        sendBtn.onclick = handleSendMessage;
+        stopBtn.onclick = () => { if (engine && generating && engine.interruptGenerate) engine.interruptGenerate(); };
+        document.getElementById("menu-btn").onclick = () => { document.getElementById("sidebar").classList.toggle("open"); };
+        document.getElementById("settings-btn").onclick = () => { settingsOverlay.style.display = "flex"; };
+        document.getElementById("close-settings").onclick = () => {
+            localStorage.setItem("haven.system", systemPromptEl.value);
+            localStorage.setItem("haven.temp", temperatureEl.value);
+            settingsOverlay.style.display = "none";
+        };
+        temperatureEl.oninput = () => { tempVal.textContent = temperatureEl.value; };
+        document.getElementById("export-btn").onclick = async () => {
+            if (!currentSessionId) return;
+            const messages = await dbGetMessages(currentSessionId);
+            const title = currentChatTitleEl.innerText || "haven-chat";
+            const body = messages.map((m) => "## " + m.role + "\n\n" + m.content).join("\n\n");
+            const blob = new Blob(["# " + title + "\n\n" + body], { type: "text/markdown" });
+            const a = document.createElement("a");
+            a.href = URL.createObjectURL(blob);
+            a.download = title.replace(/[^\w\-]+/g, "-").slice(0, 40) + ".md";
+            a.click();
+        };
+        modelSelect.onchange = async () => {
+            const next = modelSelect.value;
+            if (next === selectedModel) return;
+            if (!confirm("Switch model? Haven will reload weights on this device. Chats stay.")) return;
+            selectedModel = next;
+            localStorage.setItem("haven.model", next);
+            loaderOverlay.style.display = "flex";
+            sendBtn.disabled = true;
+            try {
+                const meta = modelMeta(next);
+                modelNameLabel.innerText = "Loading " + meta.name + " (" + meta.size + ")";
+                if (engine && engine.reload) await engine.reload(next);
+                else await initAI();
+                loaderOverlay.style.display = "none";
+                sendBtn.disabled = false;
+            } catch (err) {
+                statusText.innerText = "Model switch failed: " + (err.message || err);
+            }
+        };
+        userInput.onkeydown = (e) => {
+            if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSendMessage(); }
+        };
+        userInput.oninput = function () {
+            this.style.height = "24px";
+            this.style.height = Math.min(this.scrollHeight, 160) + "px";
+        };
+        window.onload = initAI;
+    </script>
+</body>
+</html>
